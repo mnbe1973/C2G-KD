@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.4
+
+# Use the default PyTorch devel image as no version was specified in the repo.
+# A devel image includes the CUDA toolkit and build essentials.
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
+
+# Set CUDA_HOME to match the base image
+ENV CUDA_HOME=/usr/local/cuda-12.1
+
+# Set matplotlib backend to a non-interactive one to prevent errors in docker
+ENV MPLBACKEND=agg
+
+WORKDIR /app
+
+# Install git to clone the repository
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Clone the repository into the working directory
+RUN git clone https://github.com/mnbe1973/C2G-KD.git .
+
+# Install Python dependencies. torch and torchvision are already in the base image.
+RUN pip install --no-cache-dir matplotlib scipy scikit-learn
+
+# Create an entrypoint script to run the experiment steps in sequence.
+COPY --chmod=755 <<'ENTRYPOINT' /app/entrypoint.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo ">>> (1/2) Training teacher model (cnn.py)..."
+python cnn.py
+
+echo
+echo ">>> (2/2) Running C2G-KD experiment (cgan_teacher_final.py)..."
+echo "    This involves training a generator per class using the teacher,"
+echo "    generating synthetic data, and then training a student model."
+echo "    NOTE: This step is computationally intensive and will take a long time."
+python cgan_teacher_final.py
+
+echo
+echo ">>> Experiment finished."
+ENTRYPOINT
+
+# Run the experiment
+ENTRYPOINT ["/app/entrypoint.sh"]
